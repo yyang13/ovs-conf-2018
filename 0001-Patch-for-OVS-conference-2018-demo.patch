@@ -1,4 +1,4 @@
-From 9e77f584b666f36958c834b8b0b2679c1c49cbf3 Mon Sep 17 00:00:00 2001
+From 4f5b93769a6579437d2c86fb865fcff14c6a02a8 Mon Sep 17 00:00:00 2001
 From: Yi Yang <yang_y_yi@163.com>
 Date: Wed, 31 Oct 2018 08:46:16 +0800
 Subject: [PATCH] Patch for OVS conference 2018 demo
@@ -9,8 +9,8 @@ Subject: [PATCH] Patch for OVS conference 2018 demo
 Signed-off-by: Yi Yang <yang_y_yi@163.com>
 ---
  lib/dpdk.c        |   4 +-
- lib/netdev-dpdk.c | 143 +++++++++++++++++++++++++++++++++++++++++++-----------
- 2 files changed, 117 insertions(+), 30 deletions(-)
+ lib/netdev-dpdk.c | 149 ++++++++++++++++++++++++++++++++++++++++++++----------
+ 2 files changed, 123 insertions(+), 30 deletions(-)
 
 diff --git a/lib/dpdk.c b/lib/dpdk.c
 index 0ee3e19..f1e93ce 100644
@@ -31,7 +31,7 @@ index 0ee3e19..f1e93ce 100644
  
      int i, ret = initial_size;
 diff --git a/lib/netdev-dpdk.c b/lib/netdev-dpdk.c
-index ac02a09..772fe84 100644
+index ac02a09..172abda 100644
 --- a/lib/netdev-dpdk.c
 +++ b/lib/netdev-dpdk.c
 @@ -39,6 +39,7 @@
@@ -175,7 +175,7 @@ index ac02a09..772fe84 100644
  static int
  netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
                       int *qfill)
-@@ -2113,18 +2147,45 @@ netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
+@@ -2113,18 +2147,51 @@ netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
      struct ingress_policer *policer = netdev_dpdk_get_ingress_policer(dev);
      int nb_rx;
      int dropped = 0;
@@ -206,9 +206,15 @@ index ac02a09..772fe84 100644
 +        usleep(2);
 +        n = rte_epoll_wait(RTE_EPOLL_PER_THREAD, event, 16, 0);
 +        if (n > 0) {
-+            rte_eth_dev_rx_intr_disable(rx->port_id, rxq->queue_id);
-+            intr_status[rx->port_id][rxq->queue_id] = false;
-+            VLOG_INFO("port: %u, queue: %u gets an interrupt\n", rx->port_id, rxq->queue_id);
++            for (i = 0; i < n; i++) {
++                void * data = event[i].epdata.data;
++                port_id = ((uintptr_t)data) >> CHAR_BIT;
++                queue_id = ((uintptr_t)data) &
++                        RTE_LEN2MASK(CHAR_BIT, uint8_t);
++                rte_eth_dev_rx_intr_disable(port_id, queue_id);
++                intr_status[port_id][queue_id] = false;
++                VLOG_INFO("port: %u, queue: %u gets an interrupt\n", port_id, queue_id);
++            }
 +        }
          return EAGAIN;
      }
@@ -221,7 +227,7 @@ index ac02a09..772fe84 100644
      if (policer) {
          dropped = nb_rx;
          nb_rx = ingress_policer_run(policer,
-@@ -2764,8 +2825,16 @@ netdev_dpdk_policer_construct(uint32_t rate, uint32_t burst)
+@@ -2764,8 +2831,16 @@ netdev_dpdk_policer_construct(uint32_t rate, uint32_t burst)
      policer->app_srtcm_params.cir = rate_bytes;
      policer->app_srtcm_params.cbs = burst_bytes;
      policer->app_srtcm_params.ebs = 0;
@@ -239,7 +245,7 @@ index ac02a09..772fe84 100644
      if (err) {
          VLOG_ERR("Could not create rte meter for ingress policer");
          free(policer);
-@@ -3040,11 +3109,13 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
+@@ -3040,11 +3115,13 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
      smap_add_format(args, "if_descr", "%s %s", rte_version(),
                                                 dev_info.driver_name);
  
@@ -256,7 +262,7 @@ index ac02a09..772fe84 100644
      }
  
      return 0;
-@@ -3724,6 +3795,7 @@ struct egress_policer {
+@@ -3724,6 +3801,7 @@ struct egress_policer {
      struct qos_conf qos_conf;
      struct rte_meter_srtcm_params app_srtcm_params;
      struct rte_meter_srtcm egress_meter;
@@ -264,7 +270,7 @@ index ac02a09..772fe84 100644
  };
  
  static void
-@@ -3746,8 +3818,17 @@ egress_policer_qos_construct(const struct smap *details,
+@@ -3746,8 +3824,17 @@ egress_policer_qos_construct(const struct smap *details,
      policer = xmalloc(sizeof *policer);
      qos_conf_init(&policer->qos_conf, &egress_policer_ops);
      egress_policer_details_to_param(details, &policer->app_srtcm_params);
@@ -283,7 +289,7 @@ index ac02a09..772fe84 100644
      if (!err) {
          *conf = &policer->qos_conf;
      } else {
-@@ -3800,8 +3881,9 @@ egress_policer_run(struct qos_conf *conf, struct rte_mbuf **pkts, int pkt_cnt,
+@@ -3800,8 +3887,9 @@ egress_policer_run(struct qos_conf *conf, struct rte_mbuf **pkts, int pkt_cnt,
      struct egress_policer *policer =
          CONTAINER_OF(conf, struct egress_policer, qos_conf);
  
@@ -295,7 +301,7 @@ index ac02a09..772fe84 100644
  
      return cnt;
  }
-@@ -4101,14 +4183,14 @@ dump_flow_pattern(struct rte_flow_item *item)
+@@ -4101,14 +4189,14 @@ dump_flow_pattern(struct rte_flow_item *item)
          VLOG_DBG("rte flow vlan pattern:\n");
          if (vlan_spec) {
              VLOG_DBG("  Spec: tpid=0x%"PRIx16", tci=0x%"PRIx16"\n",
@@ -312,7 +318,7 @@ index ac02a09..772fe84 100644
          } else {
              VLOG_DBG("  Mask = null\n");
          }
-@@ -4283,17 +4365,22 @@ add_flow_rss_action(struct flow_actions *actions,
+@@ -4283,17 +4371,22 @@ add_flow_rss_action(struct flow_actions *actions,
                      struct netdev *netdev) {
      int i;
      struct rte_flow_action_rss *rss;
@@ -339,7 +345,7 @@ index ac02a09..772fe84 100644
      }
  
      add_flow_action(actions, RTE_FLOW_ACTION_TYPE_RSS, rss);
-@@ -4362,7 +4449,7 @@ netdev_dpdk_add_rte_flow_offload(struct netdev *netdev,
+@@ -4362,7 +4455,7 @@ netdev_dpdk_add_rte_flow_offload(struct netdev *netdev,
          vlan_mask.tci  = match->wc.masks.vlans[0].tci & ~htons(VLAN_CFI);
  
          /* match any protocols */
